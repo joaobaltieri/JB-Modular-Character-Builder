@@ -1,3 +1,4 @@
+![JB Modular Character Builder Cover](./Media/cover.png)
 # JB Modular Character Builder 🛠️
 
 A Unity editor tool designed to make modular character workflows faster, cleaner, and easier to manage.
