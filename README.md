@@ -11,6 +11,9 @@ A Unity editor tool designed to make modular character workflows faster, cleaner
 -  Clean prefab export
 -  Fast modular character iteration inside Unity
 
+
+![JB Modular Character Builder Window](./Media/builder-window-01.png)
+
 ## ⚙️ Installation 
 Import the tool into your Unity project and open it from:
 
