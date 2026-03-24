@@ -67,6 +67,26 @@ namespace JB.ModularCharacterBuilder
             ModularCharacterBuildPreset.MaterialFamily.Emissive
         };
 
+        private static readonly string[] EmissionColorPropertyCandidates =
+        {
+            "_EmissiveColor",   // HDRP
+            "_EmissionColor"    // URP / Standard-like
+        };
+
+        private static string GetFirstExistingProperty(Material mat, string[] candidates)
+        {
+            if (mat == null || candidates == null)
+                return null;
+
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                if (mat.HasProperty(candidates[i]))
+                    return candidates[i];
+            }
+
+            return null;
+        }
+
         public static void ShowWindow(
             Rect activatorRect,
             ModularCharacterBuildPreset.MaterialFamily family,
@@ -850,14 +870,35 @@ namespace JB.ModularCharacterBuilder
         {
             if (mat == null)
                 return ModularCharacterBuildPreset.MaterialFamily.Unknown;
+
             string name = (mat.name ?? string.Empty).ToLowerInvariant();
             string shaderName = mat.shader != null ? mat.shader.name.ToLowerInvariant() : string.Empty;
-            if (name.Contains("transparent") || shaderName.Contains("transparent") || name.Contains("glass") || shaderName.Contains("glass") || IsMaterialTransparent(mat))
-                return ModularCharacterBuildPreset.MaterialFamily.Transparent;
-            if (name.Contains("emissive") || shaderName.Contains("emissive") || IsMaterialEmissive(mat))
+
+            // 1. Transparent first
+            if (name.Contains("glass") || shaderName.Contains("glass"))
+                return ModularCharacterBuildPreset.MaterialFamily.Glass;
+
+            if (name.Contains("transparent") || shaderName.Contains("transparent"))
+                return ModularCharacterBuildPreset.MaterialFamily.Glass;
+
+            if (IsMaterialTransparent(mat))
+                return ModularCharacterBuildPreset.MaterialFamily.Glass;
+
+            // 2. Metallic second
+            if (name.Contains("metallic") || shaderName.Contains("metallic"))
+                return ModularCharacterBuildPreset.MaterialFamily.Metal;
+
+            if (name.Contains("metal") || shaderName.Contains("metal"))
+                return ModularCharacterBuildPreset.MaterialFamily.Metal;
+
+            if (IsMaterialMetallic(mat))
+                return ModularCharacterBuildPreset.MaterialFamily.Metal;
+
+            // 3. Emissive third
+            if (IsMaterialEmissive(mat))
                 return ModularCharacterBuildPreset.MaterialFamily.Emissive;
-            if (name.Contains("metallic") || shaderName.Contains("metallic") || name.Contains("metal") || shaderName.Contains("metal") || IsMaterialMetallic(mat))
-                return ModularCharacterBuildPreset.MaterialFamily.Metallic;
+
+            // 4. Fallback
             return ModularCharacterBuildPreset.MaterialFamily.Opaque;
         }
 
@@ -881,15 +922,50 @@ namespace JB.ModularCharacterBuilder
 
         private static bool IsMaterialEmissive(Material mat)
         {
-            if (mat == null) return false;
-            try
+            if (mat == null)
+                return false;
+
+            Color emissionColor = Color.black;
+            bool hasEmission = false;
+
+            if (mat.HasProperty("_EmissionColor"))
             {
-                if (mat.IsKeywordEnabled("_EMISSION")) return true;
-                if (!mat.HasProperty("_EmissionColor")) return false;
-                Color c = mat.GetColor("_EmissionColor");
-                return Mathf.Max(c.r, Mathf.Max(c.g, c.b)) > 0.001f;
+                emissionColor = mat.GetColor("_EmissionColor");
+                hasEmission = true;
             }
-            catch { return false; }
+
+            if (!hasEmission)
+                return false;
+
+            float max = Mathf.Max(emissionColor.r, Mathf.Max(emissionColor.g, emissionColor.b));
+
+            // Needs a real visible emission value
+            if (max <= 0.2f)
+                return false;
+
+            string name = (mat.name ?? string.Empty).ToLowerInvariant();
+            string shaderName = mat.shader != null ? mat.shader.name.ToLowerInvariant() : string.Empty;
+
+            // Strong explicit hint = emissive
+            if (name.Contains("emissive") || shaderName.Contains("emissive"))
+                return true;
+
+            // Avoid false positives on obvious opaque/metal/glass materials
+            if (name.Contains("opaque") || shaderName.Contains("opaque"))
+                return false;
+
+            if (name.Contains("metal") || shaderName.Contains("metal"))
+                return false;
+
+            if (name.Contains("glass") || shaderName.Contains("glass"))
+                return false;
+
+            if (name.Contains("transparent") || shaderName.Contains("transparent"))
+                return false;
+
+            // If it has real emission and does not look like a standard opaque/metal/glass material,
+            // treat it as emissive.
+            return true;
         }
 
         private static bool IsMaterialMetallic(Material mat)
