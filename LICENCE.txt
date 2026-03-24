@@ -1,0 +1,55 @@
+JB MODULAR CHARACTER BUILDER
+LICENSE
+
+Copyright (c) João Baltieri
+All rights reserved.
+
+This software, including its source code, editor tools, scripts, assets, documentation, and related files, is provided for use only under the terms described below.
+
+--------------------------------------------------
+PERMITTED USE
+--------------------------------------------------
+
+You may:
+
+- download and use this tool for personal or commercial projects
+- use this tool together with compatible modular character assets
+- modify the tool for your own internal workflow or project needs
+
+--------------------------------------------------
+RESTRICTIONS
+--------------------------------------------------
+
+You may not:
+
+- redistribute this tool, in whole or in part
+- resell this tool, in whole or in part
+- repackage this tool as your own product
+- publish, sublicense, rent, lease, or transfer this tool to third parties
+- distribute modified versions of this tool
+- remove or alter copyright, authorship, or attribution notices
+- use this tool as the basis for a competing commercial product
+
+--------------------------------------------------
+OWNERSHIP
+--------------------------------------------------
+
+This tool is licensed, not sold.
+
+All rights, title, and interest in and to the software remain the property of João Baltieri.
+
+--------------------------------------------------
+NO WARRANTY
+--------------------------------------------------
+
+This software is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement.
+
+In no event shall the author be liable for any claim, damages, or other liability arising from, out of, or in connection with the software or the use of the software.
+
+--------------------------------------------------
+CONTACT
+--------------------------------------------------
+
+For official updates, documentation, or support, refer to the official repository or contact the author directly.
+
+João Baltieri
