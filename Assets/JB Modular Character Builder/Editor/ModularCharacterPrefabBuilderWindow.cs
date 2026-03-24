@@ -52,7 +52,11 @@ namespace JB.ModularCharacterBuilder
         };
 
         private static readonly string[] BaseColorPropertyCandidates = { "_BaseColor", "_Color" };
-        private static readonly string[] EmissionColorPropertyCandidates = { "_EmissionColor" };
+        private static readonly string[] EmissionColorPropertyCandidates =
+        {
+            "_EmissiveColor",   // HDRP
+            "_EmissionColor"    // URP / Standard-like
+        };
         private static readonly string[] SurfaceTypePropertyCandidates = { "_Surface", "_SurfaceType" };
         private static readonly string[] MetallicPropertyCandidates = { "_Metallic", "_Metalness", "_MetallicScale", "_MetallicRemapMax" };
         private static readonly string[] SmoothnessPropertyCandidates = { "_Smoothness", "_Glossiness" };
@@ -2148,25 +2152,93 @@ namespace JB.ModularCharacterBuilder
                 finalBase.a = original.a;
                 mat.SetColor(baseColorProp, finalBase);
             }
-
             if (family == ModularCharacterBuildPreset.MaterialFamily.Emissive)
             {
                 string emissionProp = GetFirstExistingProperty(mat, EmissionColorPropertyCandidates);
                 if (!string.IsNullOrEmpty(emissionProp))
                 {
-                    Color baseEmission = mat.GetColor(emissionProp);
-                    Color finalEmission = PreserveEmissionIntensity(baseEmission, emissionColor);
+                    Color finalEmission = emissionColor;
+
                     mat.EnableKeyword("_EMISSION");
                     mat.SetColor(emissionProp, finalEmission);
+
+                    // HDRP serialized/UI-facing emissive fields
                     if (mat.HasProperty("_UseEmissiveIntensity"))
                         mat.SetFloat("_UseEmissiveIntensity", 1f);
+
+                    if (mat.HasProperty("_EmissiveIntensity"))
+                        mat.SetFloat("_EmissiveIntensity", Mathf.Max(finalEmission.maxColorComponent, 1f));
+
+                    if (mat.HasProperty("_EmissiveColorLDR"))
+                    {
+                        float max = Mathf.Max(finalEmission.r, Mathf.Max(finalEmission.g, finalEmission.b));
+                        Color ldr = max > 0.0001f
+                            ? new Color(finalEmission.r / max, finalEmission.g / max, finalEmission.b / max, 1f)
+                            : Color.black;
+
+                        mat.SetColor("_EmissiveColorLDR", ldr);
+                    }
+
+                    if (mat.HasProperty("_EmissiveExposureWeight"))
+                        mat.SetFloat("_EmissiveExposureWeight", 1f);
+
+                    mat.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+
+                    // HDRP validation through reflection, so this still compiles in URP-only projects
+                    TryApplyHdrpEmissiveState(mat, finalEmission);
                 }
             }
-            else if (mat.IsKeywordEnabled("_EMISSION"))
+            else
             {
                 mat.DisableKeyword("_EMISSION");
+                mat.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
             }
             return mat;
+        }
+
+        private static void TryApplyHdrpEmissiveState(Material mat, Color finalEmission)
+        {
+            if (mat == null || mat.shader == null)
+                return;
+
+            string shaderName = mat.shader.name ?? string.Empty;
+            if (!shaderName.Contains("HDRP", StringComparison.OrdinalIgnoreCase) &&
+                !shaderName.Contains("High Definition", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            try
+            {
+                var hdMaterialType = Type.GetType(
+                    "UnityEngine.Rendering.HighDefinition.HDMaterial, Unity.RenderPipelines.HighDefinition.Runtime");
+
+                if (hdMaterialType == null)
+                    return;
+
+                var setUseEmissiveIntensity = hdMaterialType.GetMethod(
+                    "SetUseEmissiveIntensity",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+                var setEmissiveColor = hdMaterialType.GetMethod(
+                    "SetEmissiveColor",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+                var validateMaterial = hdMaterialType.GetMethod(
+                    "ValidateMaterial",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+                // Keep separate HDRP UI/intensity workflow enabled
+                setUseEmissiveIntensity?.Invoke(null, new object[] { mat, true });
+
+                // Writes the HDRP emissive state in a valid way
+                setEmissiveColor?.Invoke(null, new object[] { mat, finalEmission });
+
+                // Ensures keywords / passes / internal HDRP state are valid
+                validateMaterial?.Invoke(null, new object[] { mat });
+            }
+            catch
+            {
+                // Silent fallback: URP and non-HDRP paths already handled above
+            }
         }
 
         private string CalculateRendererPath(Renderer renderer)
@@ -2731,16 +2803,37 @@ namespace JB.ModularCharacterBuilder
 
         private static ModularCharacterBuildPreset.MaterialFamily DetectMaterialFamily(Material mat)
         {
-            if (mat == null) return ModularCharacterBuildPreset.MaterialFamily.Unknown;
-            string name = mat.name.ToLowerInvariant();
+            if (mat == null)
+                return ModularCharacterBuildPreset.MaterialFamily.Unknown;
+
+            string name = (mat.name ?? string.Empty).ToLowerInvariant();
             string shaderName = mat.shader != null ? mat.shader.name.ToLowerInvariant() : string.Empty;
-            bool transparent = IsMaterialTransparent(mat);
-            bool emissive = IsMaterialEmissive(mat);
-            bool metallic = IsMaterialMetallic(mat);
-            if (name.Contains("glass") || shaderName.Contains("glass")) return ModularCharacterBuildPreset.MaterialFamily.Glass;
-            if (transparent) return ModularCharacterBuildPreset.MaterialFamily.Glass;
-            if (name.Contains("emissive") || shaderName.Contains("emissive") || emissive) return ModularCharacterBuildPreset.MaterialFamily.Emissive;
-            if (name.Contains("metal") || shaderName.Contains("metal") || metallic) return ModularCharacterBuildPreset.MaterialFamily.Metal;
+
+            // 1. Transparent first
+            if (name.Contains("glass") || shaderName.Contains("glass"))
+                return ModularCharacterBuildPreset.MaterialFamily.Glass;
+
+            if (name.Contains("transparent") || shaderName.Contains("transparent"))
+                return ModularCharacterBuildPreset.MaterialFamily.Glass;
+
+            if (IsMaterialTransparent(mat))
+                return ModularCharacterBuildPreset.MaterialFamily.Glass;
+
+            // 2. Metallic second
+            if (name.Contains("metallic") || shaderName.Contains("metallic"))
+                return ModularCharacterBuildPreset.MaterialFamily.Metal;
+
+            if (name.Contains("metal") || shaderName.Contains("metal"))
+                return ModularCharacterBuildPreset.MaterialFamily.Metal;
+
+            if (IsMaterialMetallic(mat))
+                return ModularCharacterBuildPreset.MaterialFamily.Metal;
+
+            // 3. Emissive third
+            if (IsMaterialEmissive(mat))
+                return ModularCharacterBuildPreset.MaterialFamily.Emissive;
+
+            // 4. Fallback
             return ModularCharacterBuildPreset.MaterialFamily.Opaque;
         }
 
@@ -2768,12 +2861,50 @@ namespace JB.ModularCharacterBuilder
 
         private static bool IsMaterialEmissive(Material mat)
         {
-            if (mat == null) return false;
-            if (mat.IsKeywordEnabled("_EMISSION")) return true;
-            string emissionProp = GetFirstExistingProperty(mat, EmissionColorPropertyCandidates);
-            if (string.IsNullOrEmpty(emissionProp)) return false;
-            Color c = mat.GetColor(emissionProp);
-            return MaxRgb(c) > 0.001f;
+            if (mat == null)
+                return false;
+
+            Color emissionColor = Color.black;
+            bool hasEmission = false;
+
+            if (mat.HasProperty("_EmissionColor"))
+            {
+                emissionColor = mat.GetColor("_EmissionColor");
+                hasEmission = true;
+            }
+
+            if (!hasEmission)
+                return false;
+
+            float max = Mathf.Max(emissionColor.r, Mathf.Max(emissionColor.g, emissionColor.b));
+
+            // Needs a real visible emission value
+            if (max <= 0.2f)
+                return false;
+
+            string name = (mat.name ?? string.Empty).ToLowerInvariant();
+            string shaderName = mat.shader != null ? mat.shader.name.ToLowerInvariant() : string.Empty;
+
+            // Strong explicit hint = emissive
+            if (name.Contains("emissive") || shaderName.Contains("emissive"))
+                return true;
+
+            // Avoid false positives on obvious opaque/metal/glass materials
+            if (name.Contains("opaque") || shaderName.Contains("opaque"))
+                return false;
+
+            if (name.Contains("metal") || shaderName.Contains("metal"))
+                return false;
+
+            if (name.Contains("glass") || shaderName.Contains("glass"))
+                return false;
+
+            if (name.Contains("transparent") || shaderName.Contains("transparent"))
+                return false;
+
+            // If it has real emission and does not look like a standard opaque/metal/glass material,
+            // treat it as emissive.
+            return true;
         }
 
         private static bool IsMaterialMetallic(Material mat)
