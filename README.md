@@ -13,6 +13,8 @@ A Unity editor tool designed to make modular character workflows faster, cleaner
 
 
 ![JB Modular Character Builder Window](./Media/builder-window-01.png)
+Watch the full video walkthrough here:  
+[JB Modular Character Builder Demo](https://youtu.be/BzeZ20v5KDg)
 
 ## ⚙️ Installation 
 Import the tool into your Unity project and open it from:
