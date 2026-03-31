@@ -36,3 +36,5 @@ For more details, see:
 
 ## 📝 Notes
 This tool is designed for compatible modular character assets that share the same rig structure.
+
+[Mini Simple Character Demo](https://www.joaobaltieri.com/product-page/mini-simple-characters-free-demo) *Compatible for testing
